@@ -5,6 +5,7 @@ from torch.distributions import MultivariateNormal
 import numpy as np
 from gymnasium import Env
 import time
+from datetime import datetime
 from typing import Callable
 import os
 
@@ -50,13 +51,17 @@ class PPO:
     def learn(
         self, 
         total_timesteps: int,
-        save_callback: Callable(int, int, float, float, float) = None,
-        save_path: str = "./checkpoints/"
+        save_callback: Callable = None,
+        save_dir: str = "./checkpoints/",
+        save_final: bool = True,
+        log_dir: str = None
     ):
         cur_timestep = 0
         cur_iteration = 0
         save_count = 0
-
+        if log_dir:
+            log_file = os.path.join(log_dir, f"{self.get_time_string()}.log")
+            
         while cur_timestep < total_timesteps:
             cur_iteration += 1
 
@@ -107,7 +112,7 @@ class PPO:
             end_time = time.time()
             time_delta = end_time - start_time
 
-            self.log(
+            self.log_console(
                 cur_iteration,
                 cur_timestep,
                 mean_episode_length,
@@ -115,6 +120,17 @@ class PPO:
                 mean_critic_loss,
                 time_delta,
             )
+            
+            if log_dir:
+                self.log_file(
+                    log_file,
+                    cur_iteration,
+                    cur_timestep,
+                    mean_episode_length,
+                    mean_actor_loss,
+                    mean_critic_loss,
+                    time_delta
+                )
             
             if save_callback and save_callback(
                 cur_iteration, 
@@ -124,9 +140,12 @@ class PPO:
                 mean_episode_length
             ):
                 save_count += 1
-                torch.save(self.actor, os.path.join(save_path, f"actor{save_count}.pt"))
+                torch.save(self.actor, os.path.join(save_dir, f"actor{save_count}.pt"))
         
-        torch.save(self.actor, os.path.join(save_path, "actor_final.pt"))
+        if save_final:
+            torch.save(self.actor, os.path.join(save_dir, "actor_final.pt"))
+            
+        return self.actor
 
     def run_env(self):
         batch_obs = []
@@ -201,13 +220,13 @@ class PPO:
         batch_rtgs.reverse()
         return batch_rtgs
 
-    def log(
+    def log_console(
         self, iteration, n_timesteps,
         mean_episode_length, mean_actor_loss, mean_critic_loss,
         time_delta
     ):
         print()
-        print(f"Iteration {iteration}".center(40, "-"), flush=True)
+        print(f"Iteration {iteration}".center(40, "-"))
         print(f"Timesteps passed: {n_timesteps}")
         print(f"Average episode length: {mean_episode_length:.4f}")
         print(f"Average actor loss: {mean_actor_loss:.4f}")
@@ -215,3 +234,23 @@ class PPO:
         print(f"Iteration time: {time_delta:.4f}")
         print("-"*40)
         print()
+        
+    def log_file(
+        self, log_file, iteration, n_timesteps,
+        mean_episode_length, mean_actor_loss, mean_critic_loss,
+        time_delta
+    ):
+        with open(log_file, "w") as f:
+            f.write("\n")
+            f.write(f"Iteration {iteration}".center(40, "-") + "\n")
+            f.write(f"Timesteps passed: {n_timesteps}\n")
+            f.write(f"Average episode length: {mean_episode_length:.4f}\n")
+            f.write(f"Average actor loss: {mean_actor_loss:.4f}\n")
+            f.write(f"Average critic loss: {mean_critic_loss:.4f}\n")
+            f.write(f"Iteration time: {time_delta:.4f}\n")
+            f.write("-"*40 + '\n')
+            f.write("\n")
+
+    def get_time_string(self):
+        now = datetime.now()
+        return now.strftime("%Y-%m-%d-%H-%M-%S")
