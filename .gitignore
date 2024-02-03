@@ -9,3 +9,4 @@ __pycache__/network.cpython-310.pyc
 __pycache__/ppo.cpython-310.pyc
 experimental.ipynb
 RL_trading.ipynb
+__pycache__/model.cpython-310.pyc

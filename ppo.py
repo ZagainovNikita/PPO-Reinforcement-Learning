@@ -11,7 +11,7 @@ class PPO:
     def __init__(
         self,
         env: Env,
-        model_class: nn.Module,
+        policy_class: nn.Module,
         device: torch.DeviceObjType = torch.device("cuda:0"),
         lr: float = 25e-6,
         batch_size: int = 6000,
@@ -21,7 +21,7 @@ class PPO:
         clip: float = 0.2
     ):
         self.env = env
-        self.model_class = model_class
+        self.policy_class = policy_class
         self.device = device
         self.lr = lr
         self.batch_size = batch_size
@@ -33,8 +33,8 @@ class PPO:
         self.act_dim = env.action_space.n
         self.obs_dim = env.observation_space.shape[0]
 
-        self.actor = self.model_class(self.obs_dim, self.act_dim).to(device)
-        self.critic = self.model_class(self.obs_dim, 1).to(device)
+        self.actor = self.policy_class(self.obs_dim, self.act_dim).to(device)
+        self.critic = self.policy_class(self.obs_dim, 1).to(device)
 
         self.actor_optimizer = torch.optim.Adam(
             self.actor.parameters(), lr=self.lr)
@@ -43,7 +43,7 @@ class PPO:
 
         self.cov_var = torch.full(
             size=(self.act_dim,), fill_value=0.5, device=self.device)
-        self.cov_mat = torch.diag(self.cov_var, device=self.device)
+        self.cov_mat = torch.diag(self.cov_var)
 
     def learn(self, total_timesteps):
         cur_timestep = 0
@@ -53,12 +53,12 @@ class PPO:
             cur_iteration += 1
             cur_timestep += np.sum(batch_lens)
             mean_episode_length = np.mean(batch_lens)
-            
+
             start_time = time.time()
 
             running_actor_loss = 0
             running_critic_loss = 0
-            
+
             (batch_obs, batch_acts, batch_log_probs,
              batch_rews, batch_lens, batch_rtgs) = self.run_env()
 
@@ -94,10 +94,10 @@ class PPO:
 
             mean_actor_loss = running_actor_loss / self.n_updates
             mean_critic_loss = running_critic_loss / self.n_updates
-            
+
             end_time = time.time()
             time_delta = end_time - start_time
-            
+
             self.log(
                 cur_iteration,
                 cur_timestep,
@@ -192,4 +192,3 @@ class PPO:
         print(f"Average critic loss: {mean_critic_loss:.4f}")
         print(f"Iteration time: {time_delta:.4f}")
         print()
-        

@@ -5,6 +5,7 @@ from torch.nn import functional as F
 
 class FeedForward(nn.Module):
     def __init__(self, in_dim, out_dim, hidden_dim=128):
+        super().__init__()
         self.fc1 = nn.Linear(in_dim, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, hidden_dim)
         self.fc3 = nn.Linear(hidden_dim, out_dim)
