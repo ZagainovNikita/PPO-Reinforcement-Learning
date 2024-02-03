@@ -4,6 +4,7 @@ from torch.nn import functional as F
 from torch.distributions import MultivariateNormal
 import numpy as np
 from gymnasium import Env
+import time
 
 
 class PPO:
@@ -46,42 +47,66 @@ class PPO:
 
     def learn(self, total_timesteps):
         cur_timestep = 0
-        n_iterations = 0
+        cur_iteration = 0
 
         while cur_timestep < total_timesteps:
-            (batch_obs, batch_acts, batch_log_probs,
-             batch_rews, batch_lens, batch_rtgs) = self.run_env()
-            
-            n_iterations += 1
+            cur_iteration += 1
             cur_timestep += np.sum(batch_lens)
-            average_episode_length = np.mean(batch_lens)
+            mean_episode_length = np.mean(batch_lens)
             
+            start_time = time.time()
+
             running_actor_loss = 0
             running_critic_loss = 0
             
+            (batch_obs, batch_acts, batch_log_probs,
+             batch_rews, batch_lens, batch_rtgs) = self.run_env()
+
             V = self.predict_rew(batch_obs)
             A = batch_rews - V.detach()
-            A = (A - A.mean()) / (A.std() + 1e-9) 
-            
+            A = (A - A.mean()) / (A.std() + 1e-9)
+
             for n_update in range(self.n_updates):
-                
+
                 V = self.predict_rew(batch_obs)
-                cur_log_probs = self.get_actions_log_probs(batch_obs, batch_acts)
+                cur_log_probs = self.get_actions_log_probs(
+                    batch_obs, batch_acts)
                 prob_ratios = torch.exp(cur_log_probs - batch_log_probs)
-                
+
                 surrogate_loss1 = A * prob_ratios
-                surrogate_loss2 = A * torch.clamp(prob_ratios, 1 - self.clip, 1 + self.clip)
-                
-                actor_loss = (-torch.min(surrogate_loss1, surrogate_loss2)).mean()
+                surrogate_loss2 = A * \
+                    torch.clamp(prob_ratios, 1 - self.clip, 1 + self.clip)
+
+                actor_loss = (-torch.min(surrogate_loss1,
+                              surrogate_loss2)).mean()
                 critic_loss = F.mse_loss(V, batch_rtgs)
-                
+
                 running_actor_loss += actor_loss.item()
                 running_critic_loss += critic_loss.item()
-                
-                
-                
-                
-                
+
+                actor_loss.backward(retain_graph=True)
+                self.actor_optimizer.step()
+                self.actor_optimizer.zero_grad()
+
+                critic_loss.backward(retain_graph=True)
+                self.critic_optimizer.step()
+                self.critic_optimizer.zero_grad()
+
+            mean_actor_loss = running_actor_loss / self.n_updates
+            mean_critic_loss = running_critic_loss / self.n_updates
+            
+            end_time = time.time()
+            time_delta = end_time - start_time
+            
+            self.log(
+                cur_iteration,
+                cur_timestep,
+                mean_episode_length,
+                mean_actor_loss,
+                mean_critic_loss,
+                time_delta,
+            )
+
     def run_env(self):
         batch_obs = []
         batch_acts = []
@@ -90,7 +115,7 @@ class PPO:
         batch_lens = []
 
         cur_timestep = 0
-        
+
         while cur_timestep < self.batch_size:
             episode_rews = []
             obs, _ = self.env.reset()
@@ -116,29 +141,29 @@ class PPO:
             self.compute_rtgs(batch_rews), device=self.device)
         batch_obs = torch.tensor(np.array(batch_obs), device=self.device)
         batch_acts = torch.tensor(np.array(batch_acts), device=self.device)
-        
+
         return (batch_obs, batch_acts, batch_log_probs,
                 batch_rews, batch_lens, batch_rtgs)
 
     def get_action(self, obs):
         mean = self.actor(obs)
         dist = MultivariateNormal(mean, self.cov_mat)
-        
+
         action = dist.sample()
         log_prob = dist.log_prob(action)
-        
+
         return action.cpu().detach().numpy(), log_prob.detach()
 
     def get_actions_log_probs(self, batch_obs, batch_acts):
         mean = self.critic(batch_obs)
         dist = MultivariateNormal(mean, self.cov_mat)
         log_probs = dist.log_prob(batch_acts)
-        
+
         return log_probs
-    
+
     def predict_rew(self, batch_obs):
         V = self.critic(batch_obs)
-        
+
         return V
 
     def compute_rtgs(self, batch_rews):
@@ -153,3 +178,18 @@ class PPO:
 
         batch_rtgs.reverse()
         return batch_rtgs
+
+    def log(
+        self, iteration, n_timesteps,
+        mean_episode_length, mean_actor_loss, mean_critic_loss,
+        time_delta
+    ):
+        print()
+        print(f"{'iteration ' + iteration}-^40", flush=True)
+        print(f"Timesteps passed: {n_timesteps}")
+        print(f"Average episode length: {mean_episode_length:.4f}")
+        print(f"Average actor loss: {mean_actor_loss:.4f}")
+        print(f"Average critic loss: {mean_critic_loss:.4f}")
+        print(f"Iteration time: {time_delta:.4f}")
+        print()
+        
