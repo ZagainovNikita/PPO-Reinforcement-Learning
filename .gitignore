@@ -7,3 +7,5 @@ data/huobi-ETHUSDT-1h.pkl
 checkpoints/trader.zip
 __pycache__/network.cpython-310.pyc
 __pycache__/ppo.cpython-310.pyc
+experimental.ipynb
+RL_trading.ipynb
