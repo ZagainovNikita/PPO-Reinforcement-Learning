@@ -34,7 +34,7 @@ class PPO:
         self.clip = clip
 
         self.act_dim = env.action_space.n
-        self.obs_dim = env.observation_space.shape[0]
+        self.obs_dim = env.observation_space.shape
 
         self.actor = self.policy_class(self.obs_dim, self.act_dim).to(device)
         self.critic = self.policy_class(self.obs_dim, 1).to(device)
@@ -73,6 +73,7 @@ class PPO:
             (batch_obs, batch_acts, batch_log_probs,
              batch_rews, batch_lens, batch_rtgs) = self.run_env()
             
+            mean_episode_reward = sum([sum(rews) for rews in batch_rews]) / len(batch_rews)
             cur_timestep += np.sum(batch_lens)
             mean_episode_length = np.mean(batch_lens)
 
@@ -115,6 +116,7 @@ class PPO:
             self.log_console(
                 cur_iteration,
                 cur_timestep,
+                mean_episode_reward,
                 mean_episode_length,
                 mean_actor_loss,
                 mean_critic_loss,
@@ -126,6 +128,7 @@ class PPO:
                     log_file,
                     cur_iteration,
                     cur_timestep,
+                    mean_episode_reward,
                     mean_episode_length,
                     mean_actor_loss,
                     mean_critic_loss,
@@ -135,6 +138,7 @@ class PPO:
             if save_callback and save_callback(
                 cur_iteration, 
                 cur_timestep,
+                mean_episode_reward,
                 mean_actor_loss, 
                 mean_critic_loss, 
                 mean_episode_length
@@ -221,13 +225,14 @@ class PPO:
         return batch_rtgs
 
     def log_console(
-        self, iteration, n_timesteps,
+        self, iteration, n_timesteps, mean_episode_reward,
         mean_episode_length, mean_actor_loss, mean_critic_loss,
         time_delta
     ):
         print()
         print(f"Iteration {iteration}".center(40, "-"))
         print(f"Timesteps passed: {n_timesteps}")
+        print(f"Average episode reward: {mean_episode_reward:.4f}")
         print(f"Average episode length: {mean_episode_length:.4f}")
         print(f"Average actor loss: {mean_actor_loss:.4f}")
         print(f"Average critic loss: {mean_critic_loss:.4f}")
@@ -236,7 +241,7 @@ class PPO:
         print()
         
     def log_file(
-        self, log_file, iteration, n_timesteps,
+        self, log_file, iteration, n_timesteps, mean_episode_reward,
         mean_episode_length, mean_actor_loss, mean_critic_loss,
         time_delta
     ):
@@ -244,6 +249,7 @@ class PPO:
             f.write("\n")
             f.write(f"Iteration {iteration}".center(40, "-") + "\n")
             f.write(f"Timesteps passed: {n_timesteps}\n")
+            f.write(f"Average episode reward: {mean_episode_reward:.4f}\n")
             f.write(f"Average episode length: {mean_episode_length:.4f}\n")
             f.write(f"Average actor loss: {mean_actor_loss:.4f}\n")
             f.write(f"Average critic loss: {mean_critic_loss:.4f}\n")
@@ -254,3 +260,4 @@ class PPO:
     def get_time_string(self):
         now = datetime.now()
         return now.strftime("%Y-%m-%d-%H-%M-%S")
+    
