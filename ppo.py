@@ -45,7 +45,7 @@ class PPO:
             self.critic.parameters(), lr=self.lr)
 
         self.cov_var = torch.full(
-            size=(self.act_dim,), fill_value=0.5, device=self.device)
+            size=(self.act_dim,), fill_value=0.5, device=torch.device("cpu"))
         self.cov_mat = torch.diag(self.cov_var)
 
     def learn(
@@ -172,7 +172,7 @@ class PPO:
 
                 batch_obs.append(obs)
                 action, log_prob = self.get_action(torch.tensor(
-                    obs, device=torch.device("cpu")).unsqueeze(0))
+                    obs, device=torch.device(self.device)).unsqueeze(0))
                 obs, rew, done, _, _ = self.env.step(np.argmax(action))
 
                 batch_log_probs.append(log_prob)
@@ -186,15 +186,16 @@ class PPO:
 
         batch_rtgs = torch.tensor(
             self.compute_rtgs(batch_rews), device=torch.device("cpu"))
-        batch_obs = torch.tensor(np.array(batch_obs), device=self.device)
-        batch_acts = torch.tensor(np.array(batch_acts), device=self.device)
-        batch_log_probs = torch.tensor(batch_log_probs, device=self.device)
+        batch_obs = torch.tensor(np.array(batch_obs), device=torch.device("cpu"))
+        batch_acts = torch.tensor(np.array(batch_acts), device=torch.device("cpu"))
+        batch_log_probs = torch.tensor(batch_log_probs, device=torch.device("cpu"))
 
         return (batch_obs, batch_acts, batch_log_probs,
                 batch_rews, batch_lens, batch_rtgs)
 
     def get_action(self, obs):
-        mean = self.actor(obs, batch_size=self.batch_size)
+        mean = self.actor(obs)
+        mean = mean.to(torch.device("cpu"))
         dist = MultivariateNormal(mean, self.cov_mat)
 
         action = dist.sample()
@@ -203,14 +204,15 @@ class PPO:
         return action.cpu().detach().numpy(), log_prob.detach()
 
     def get_actions_log_probs(self, batch_obs, batch_acts):
-        mean = self.actor(batch_obs, batch_size=self.batch_size)
+        mean = self.actor.batch_inference(batch_obs, batch_size=self.batch_size)
         dist = MultivariateNormal(mean, self.cov_mat)
+        
         log_probs = dist.log_prob(batch_acts)
 
         return log_probs
 
     def predict_rew(self, batch_obs):
-        V = self.critic(batch_obs, batch_size=self.batch_size)
+        V = self.critic.batch_inference(batch_obs, batch_size=self.batch_size)
 
         return V
 
