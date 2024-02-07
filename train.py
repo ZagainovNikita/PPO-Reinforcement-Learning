@@ -10,7 +10,7 @@ def main():
         policy_class=FeedForwardNN,
         gamma=0.95,
         n_updates=5,
-        batch_size=4800,
+        episodes_per_update=4800,
         episode_length=1600,
         device="cpu",
         lr=1e-3

@@ -1,0 +1,10 @@
+
+--------------Iteration 6---------------
+Timesteps passed: 28981
+Average episode reward: 41.2735
+Average episode length: 41.2735
+Average actor loss: -0.0033
+Average critic loss: 152.2502
+Iteration time: 5.8024
+----------------------------------------
+

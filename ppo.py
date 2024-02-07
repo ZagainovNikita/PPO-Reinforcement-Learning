@@ -17,7 +17,7 @@ class PPO:
         policy_class: nn.Module,
         device: torch.DeviceObjType = torch.device("cuda:0"),
         lr: float = 25e-6,
-        batch_size: int = 6000,
+        episodes_per_update: int = 6000,
         episode_length: int = 2000,
         gamma: float = 0.95,
         n_updates: int = 10,
@@ -27,7 +27,7 @@ class PPO:
         self.policy_class = policy_class
         self.device = device
         self.lr = lr
-        self.batch_size = batch_size
+        self.batch_size = episodes_per_update
         self.episode_length = episode_length
         self.gamma = gamma
         self.n_updates = n_updates
