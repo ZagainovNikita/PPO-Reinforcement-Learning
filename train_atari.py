@@ -12,7 +12,7 @@ def main():
         n_updates=5,
         episodes_per_update=2000,
         episode_length=1000,
-        batch_size=32,
+        batch_size=16,
         device="cuda",
         lr=1e-3
     )
