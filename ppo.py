@@ -66,14 +66,15 @@ class PPO:
 
         while cur_timestep < total_timesteps:
             cur_iteration += 1
-
             start_time = time.time()
 
             running_actor_loss = 0
             running_critic_loss = 0
 
+            print("begin rollout")
             (batch_obs, batch_acts, batch_log_probs,
              batch_rews, batch_lens, batch_rtgs) = self.run_env()
+            print("rollout finished")
 
             mean_episode_reward = sum([sum(rews)
                                       for rews in batch_rews]) / len(batch_rews)
@@ -83,9 +84,10 @@ class PPO:
             V = self.predict_rew(batch_obs)
             A = batch_rtgs - V.detach()
             A = (A - A.mean()) / (A.std() + 1e-9)
-
+            
             for n_update in range(self.n_updates):
-
+                print(f"update {n_update}")
+                torch.cuda.empty_cache()
                 V = self.predict_rew(batch_obs)
                 cur_log_probs = self.get_actions_log_probs(
                     batch_obs, batch_acts)
@@ -94,7 +96,7 @@ class PPO:
                 surrogate_loss1 = A * prob_ratios
                 surrogate_loss2 = A * \
                     torch.clamp(prob_ratios, 1 - self.clip, 1 + self.clip)
-
+                
                 actor_loss = (-torch.min(surrogate_loss1,
                               surrogate_loss2)).mean()
                 critic_loss = F.mse_loss(V, batch_rtgs.unsqueeze(-1))
@@ -109,6 +111,9 @@ class PPO:
 
                 running_actor_loss += actor_loss.item()
                 running_critic_loss += critic_loss.item()
+                
+                print(batch_obs.device, batch_acts.device, batch_rtgs.device, batch_log_probs.device)
+                torch.cuda.empty_cache()
 
             mean_actor_loss = running_actor_loss / self.n_updates
             mean_critic_loss = running_critic_loss / self.n_updates
@@ -173,8 +178,7 @@ class PPO:
                 cur_timestep += 1
 
                 batch_obs.append(obs)
-                action, log_prob = self.get_action(
-                    torch.tensor(obs, device=self.device))
+                action, log_prob = self.get_action(torch.tensor(obs))
                 obs, rew, done, _, _ = self.env.step(np.argmax(action))
 
                 batch_log_probs.append(log_prob)
@@ -196,7 +200,8 @@ class PPO:
                 batch_rews, batch_lens, batch_rtgs)
 
     def get_action(self, obs):
-        mean = self.actor(obs.to(self.device)).to(torch.device("cpu"))
+        with torch.no_grad():
+            mean = self.actor(obs.to(self.device)).to(torch.device("cpu"))
         dist = MultivariateNormal(mean, self.cov_mat)
 
         action = dist.sample()
@@ -211,6 +216,7 @@ class PPO:
             batch = batch_obs[start_idx: start_idx + self.batch_size].to(self.device)
             pred = self.actor(batch).to(mean.device)
             mean[start_idx: start_idx + self.batch_size] = pred
+            pred = pred.to(torch.device("cpu"))
             
         dist = MultivariateNormal(mean, self.cov_mat)
         log_probs = dist.log_prob(batch_acts)
@@ -227,6 +233,7 @@ class PPO:
             batch = batch_obs[start_idx: start_idx + self.batch_size].to(self.device)
             pred = self.critic(batch).to(V.device)
             V[start_idx: start_idx + self.batch_size] = pred
+            pred = pred.to(torch.device("cpu"))
         return V
 
     def compute_rtgs(self, batch_rews):
