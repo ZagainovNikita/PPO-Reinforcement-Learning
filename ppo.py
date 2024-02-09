@@ -19,6 +19,7 @@ class PPO:
         lr: float = 25e-6,
         episodes_per_update: int = 6000,
         episode_length: int = 2000,
+        batch_size: int = 64,
         gamma: float = 0.95,
         n_updates: int = 10,
         clip: float = 0.2
@@ -27,8 +28,9 @@ class PPO:
         self.policy_class = policy_class
         self.device = device
         self.lr = lr
-        self.batch_size = episodes_per_update
+        self.episodes_per_update = episodes_per_update
         self.episode_length = episode_length
+        self.batch_size = batch_size
         self.gamma = gamma
         self.n_updates = n_updates
         self.clip = clip
@@ -36,8 +38,8 @@ class PPO:
         self.act_dim = env.action_space.n
         self.obs_dim = env.observation_space.shape
 
-        self.actor = self.policy_class(self.obs_dim, self.act_dim).to(device)
-        self.critic = self.policy_class(self.obs_dim, 1).to(device)
+        self.actor = self.policy_class(self.obs_dim, self.act_dim).to(self.device)
+        self.critic = self.policy_class(self.obs_dim, 1).to(self.device)
 
         self.actor_optimizer = torch.optim.Adam(
             self.actor.parameters(), lr=self.lr)
@@ -45,11 +47,11 @@ class PPO:
             self.critic.parameters(), lr=self.lr)
 
         self.cov_var = torch.full(
-            size=(self.act_dim,), fill_value=0.5, device=self.device)
+            size=(self.act_dim,), fill_value=0.5, device=torch.device("cpu"))
         self.cov_mat = torch.diag(self.cov_var)
 
     def learn(
-        self, 
+        self,
         total_timesteps: int,
         save_callback: Callable = None,
         save_dir: str = "./checkpoints/",
@@ -61,7 +63,7 @@ class PPO:
         save_count = 0
         if log_dir:
             log_file = os.path.join(log_dir, f"{self.get_time_string()}.log")
-            
+
         while cur_timestep < total_timesteps:
             cur_iteration += 1
 
@@ -72,8 +74,9 @@ class PPO:
 
             (batch_obs, batch_acts, batch_log_probs,
              batch_rews, batch_lens, batch_rtgs) = self.run_env()
-            
-            mean_episode_reward = sum([sum(rews) for rews in batch_rews]) / len(batch_rews)
+
+            mean_episode_reward = sum([sum(rews)
+                                      for rews in batch_rews]) / len(batch_rews)
             cur_timestep += np.sum(batch_lens)
             mean_episode_length = np.mean(batch_lens)
 
@@ -103,7 +106,7 @@ class PPO:
                 critic_loss.backward(retain_graph=True)
                 self.critic_optimizer.step()
                 self.critic_optimizer.zero_grad()
-                
+
                 running_actor_loss += actor_loss.item()
                 running_critic_loss += critic_loss.item()
 
@@ -122,7 +125,7 @@ class PPO:
                 mean_critic_loss,
                 time_delta,
             )
-            
+
             if log_dir:
                 self.log_file(
                     log_file,
@@ -134,21 +137,22 @@ class PPO:
                     mean_critic_loss,
                     time_delta
                 )
-            
+
             if save_callback and save_callback(
-                cur_iteration, 
+                cur_iteration,
                 cur_timestep,
                 mean_episode_reward,
-                mean_actor_loss, 
-                mean_critic_loss, 
+                mean_actor_loss,
+                mean_critic_loss,
                 mean_episode_length
             ):
                 save_count += 1
-                torch.save(self.actor, os.path.join(save_dir, f"actor{save_count}.pt"))
-        
+                torch.save(self.actor, os.path.join(
+                    save_dir, f"actor{save_count}.pt"))
+
         if save_final:
             torch.save(self.actor, os.path.join(save_dir, "actor_final.pt"))
-            
+
         return self.actor
 
     def run_env(self):
@@ -160,7 +164,7 @@ class PPO:
 
         cur_timestep = 0
 
-        while cur_timestep < self.batch_size:
+        while cur_timestep < self.episodes_per_update:
             episode_rews = []
             obs, _ = self.env.reset()
             done = False
@@ -169,7 +173,8 @@ class PPO:
                 cur_timestep += 1
 
                 batch_obs.append(obs)
-                action, log_prob = self.get_action(torch.tensor(obs, device=self.device))
+                action, log_prob = self.get_action(
+                    torch.tensor(obs, device=self.device))
                 obs, rew, done, _, _ = self.env.step(np.argmax(action))
 
                 batch_log_probs.append(log_prob)
@@ -182,16 +187,16 @@ class PPO:
             batch_rews.append(episode_rews)
 
         batch_rtgs = torch.tensor(
-            self.compute_rtgs(batch_rews), device=self.device)
-        batch_obs = torch.tensor(np.array(batch_obs), device=self.device)
-        batch_acts = torch.tensor(np.array(batch_acts), device=self.device)
-        batch_log_probs = torch.tensor(batch_log_probs, device=self.device)
+            self.compute_rtgs(batch_rews), device=torch.device("cpu"))
+        batch_obs = torch.tensor(np.array(batch_obs), device=torch.device("cpu"))
+        batch_acts = torch.tensor(np.array(batch_acts), device=torch.device("cpu"))
+        batch_log_probs = torch.tensor(batch_log_probs, device=torch.device("cpu"))
 
         return (batch_obs, batch_acts, batch_log_probs,
                 batch_rews, batch_lens, batch_rtgs)
 
     def get_action(self, obs):
-        mean = self.actor(obs)
+        mean = self.actor(obs.to(self.device)).to(torch.device("cpu"))
         dist = MultivariateNormal(mean, self.cov_mat)
 
         action = dist.sample()
@@ -200,15 +205,28 @@ class PPO:
         return action.cpu().detach().numpy(), log_prob.detach()
 
     def get_actions_log_probs(self, batch_obs, batch_acts):
-        mean = self.actor(batch_obs)
+        mean = torch.empty(size=(
+            batch_obs.shape[0], self.act_dim), dtype=torch.float, device=torch.device("cpu"))
+        for start_idx in range(0, batch_obs.shape[0], self.batch_size):
+            batch = batch_obs[start_idx: start_idx + self.batch_size].to(self.device)
+            pred = self.actor(batch).to(mean.device)
+            mean[start_idx: start_idx + self.batch_size] = pred
+            
         dist = MultivariateNormal(mean, self.cov_mat)
         log_probs = dist.log_prob(batch_acts)
 
         return log_probs
 
     def predict_rew(self, batch_obs):
-        V = self.critic(batch_obs)
-
+        V = torch.empty(
+            size=(batch_obs.shape[0], 1), dtype=torch.float, 
+            device=torch.device("cpu")
+        )
+        
+        for start_idx in range(0, batch_obs.shape[0], self.batch_size):
+            batch = batch_obs[start_idx: start_idx + self.batch_size].to(self.device)
+            pred = self.critic(batch).to(V.device)
+            V[start_idx: start_idx + self.batch_size] = pred
         return V
 
     def compute_rtgs(self, batch_rews):
@@ -239,7 +257,7 @@ class PPO:
         print(f"Iteration time: {time_delta:.4f}")
         print("-"*40)
         print()
-        
+
     def log_file(
         self, log_file, iteration, n_timesteps, mean_episode_reward,
         mean_episode_length, mean_actor_loss, mean_critic_loss,
@@ -260,4 +278,3 @@ class PPO:
     def get_time_string(self):
         now = datetime.now()
         return now.strftime("%Y-%m-%d-%H-%M-%S")
-    

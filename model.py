@@ -24,35 +24,41 @@ class ConvolutionalNN(nn.Module):
         super().__init__()
         h, w, c = obs_space
 
-        self.conv1 = nn.Conv2d(c, 16, 3, 1, 1)
-        c = 16
+        self.conv1 = nn.Conv2d(c, 8, 3, 1, 1)
+        c = 8
         self.relu1 = nn.ReLU()
         self.pool1 = nn.MaxPool2d(2, 2)
         h //= 2
         w //= 2
         self.ln1 = nn.LayerNorm((c, h, w))
         
-        self.conv2 = nn.Conv2d(c, 32, 3, 1, 1)
-        c = 32
+        self.conv2 = nn.Conv2d(c, 16, 3, 1, 1)
+        c = 16
         self.relu2 = nn.ReLU()
         self.pool2 = nn.MaxPool2d(2, 2)
         h //= 2
         w //= 2
         self.ln2 = nn.LayerNorm((c, h, w))
         
-        self.conv3 = nn.Conv2d(c, 64, 3, 1, 1)
-        c = 64
+        self.conv3 = nn.Conv2d(c, 32, 3, 1, 1)
+        c = 32
         self.relu3 = nn.ReLU()
         self.pool3 = nn.MaxPool2d(2, 2)
         h //= 2
         w //= 2
         self.ln3 = nn.LayerNorm((c, h, w))
         
-        self.fc1 = nn.Linear(c * h * w, 1024)
+        self.fc1 = nn.Linear(c * h * w, 512)
         self.relu4 = nn.LeakyReLU()
-        self.fc2 = nn.Linear(1024, out_dim)
+        self.fc2 = nn.Linear(512, out_dim)
         
     def forward(self, x):
+        while len(x.shape) < 4:
+            x = x.unsqueeze(0)
+        
+        x = x.to(torch.float)
+        x = x / 255
+            
         x = x.permute(0, 3, 1, 2)
         
         x = self.ln1(self.pool1(self.relu1(self.conv1(x))))

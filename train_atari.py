@@ -1,18 +1,19 @@
-from model import FeedForwardNN
+from model import ConvolutionalNN
 import gymnasium as gym
 from ppo import PPO
 
 
 def main():
-    env = gym.make("CartPole-v1")
+    env = gym.make("ALE/Assault-v5")
     model = PPO(
         env=env,
-        policy_class=FeedForwardNN,
+        policy_class=ConvolutionalNN,
         gamma=0.95,
         n_updates=5,
-        episodes_per_update=4800,
-        episode_length=1600,
-        device="cpu",
+        episodes_per_update=2000,
+        episode_length=1000,
+        batch_size=32,
+        device="cuda",
         lr=1e-3
     )
 
