@@ -1,7 +1,49 @@
 import torch
 from torch.nn import functional as F
 import numpy as np
-from algorithms.ppo.ppo_memory import PPOMemory
+
+
+class GAEMemory:
+    def __init__(self, batch_size):
+        self.states = []
+        self.probs = []
+        self.vals = []
+        self.actions = []
+        self.rewards = []
+        self.dones = []
+        
+        self.batch_size = batch_size
+        
+    def clear_memory(self):
+        self.states = []
+        self.probs = []
+        self.vals = []
+        self.actions = []
+        self.rewards = []
+        self.dones = []
+        
+    def generate_batches(self, shuffle=False):
+        n_samples = len(self.states)
+        batch_starts = np.arange(0, n_samples, self.batch_size)
+        indices = np.arange(0, n_samples)
+        
+        if shuffle:
+            np.random.shuffle(indices)
+        
+        batches = [indices[start:start+self.batch_size] for start in batch_starts]
+        
+        return (np.array(self.states), np.array(self.probs), np.array(self.vals),
+                np.array(self.actions), np.array(self.rewards), np.array(self.dones),
+                batches)
+        
+    def store(self, state, prob, val, action, reward, done):
+        self.states.append(state)
+        self.probs.append(prob)
+        self.vals.append(val)
+        self.actions.append(action)
+        self.rewards.append(reward)
+        self.dones.append(done)
+        
 
 
 class PPO:
@@ -17,14 +59,14 @@ class PPO:
         self.gamma = gamma
         self.lambda_disc = lambda_disc
         self.clip = clip
-        self.memory = PPOMemory(batch_size)
+        self.memory = GAEMemory(batch_size)
 
     def learn(self, n_epochs=10, timesteps_per_epoch=1000):
         for epoch in range(n_epochs):
             self.collect_rollouts(timesteps_per_epoch)
             
             (states, old_probs, vals,
-             actions, rewards, dones, batches) = self.memory.generate_batches()
+             actions, rewards, dones, batches) = self.memory.generate_batches(shuffle=True)
             
             avg_ep_reward = np.sum(rewards) / np.sum(dones.astype(int))
             print(avg_ep_reward)
@@ -40,19 +82,9 @@ class PPO:
                          * (1 - int(dones[i])) - vals[i])
                     discount_factor *= self.gamma * self.lambda_disc
                 advantages[t] = cur_adv
-                
-            # running_rews = np.zeros(len(rewards), dtype=np.float32)
-            # discount_factor = 0.95
-            # cur_rew = 0
-            # for i, rew in enumerate(rewards):
-            #     cur_rew = rew + discount_factor * cur_rew
-            #     if dones[i - 1]:
-            #         cur_rew = rew
-            #     running_rews[i] = cur_rew
-            
-            # advantages = running_rews - vals
-            # advantages = (advantages - advantages.mean()) / advantages.std()
 
+            advantages = advantages
+            
             for batch in batches:
                 states_batch = torch.tensor(
                     states[batch], dtype=torch.float32, device=self.actor.device)
@@ -77,7 +109,6 @@ class PPO:
                 actor_loss = -torch.min(surrogate_loss1, surrogate_loss2).mean()
                 
                 critic_target = advantages_batch + vals_batch
-                # critic_target = torch.tensor(running_rews[batch], dtype=torch.float32, device=self.actor.device)
                 critic_loss = F.mse_loss(critic_vals, critic_target.view(critic_vals.shape))
                 
                 total_loss = actor_loss + critic_loss * 0.5
