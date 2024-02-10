@@ -18,6 +18,7 @@ class FeedForwardNN(nn.Module):
             nn.Linear(hidden_dim, out_dim)
         )
         
+        self.device = device
         self.to(device)
         
         self.optimizer = torch.optim.Adam(self.parameters(), lr=lr)
