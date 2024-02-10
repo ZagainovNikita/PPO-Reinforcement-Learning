@@ -2,3 +2,5 @@
 /__pycache__/
 /checkpoints/
 /logs/
+/.vscode/
+.vscode/settings.json
