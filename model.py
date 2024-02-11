@@ -93,3 +93,4 @@ class ConvolutionalNN(nn.Module):
             result[start_idx: start_idx + batch_size] = batch.to(torch.device("cpu"))
 
         return result
+
