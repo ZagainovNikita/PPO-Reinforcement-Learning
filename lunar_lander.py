@@ -1,12 +1,11 @@
+from algorithms.ppo_continuous import PPO, FeedForwardNN
 import gymnasium as gym
-from algorithms.ddpg_continuous import DDPG, FeedForwardCritic, FeedForwardActor
+import torch
 
 
 env = gym.make("LunarLanderContinuous-v2")
-actor = FeedForwardActor(*env.observation_space.shape, *env.action_space.shape)
-critic = FeedForwardCritic(*env.observation_space.shape, *env.action_space.shape)
-target_actor = FeedForwardActor(*env.observation_space.shape, *env.action_space.shape)
-target_critic = FeedForwardCritic(*env.observation_space.shape, *env.action_space.shape)
+actor = FeedForwardNN(8, 2)
+critic = FeedForwardNN(8, 1)
+model = PPO(env, actor, critic)
 
-model = DDPG(env, actor, target_actor, critic, target_critic)
-model.learn(50, 4000, 256)
+model.learn(100, 4096, batch_size=1024, force_stop=6000)
