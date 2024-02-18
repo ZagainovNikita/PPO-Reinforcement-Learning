@@ -1,6 +1,5 @@
 import gymnasium as gym
-from algorithms.ppo import PPO
-from models.feed_forward import FeedForwardNN
+from algorithms.ppo_discrete import PPO, FeedForwardNN
 
 
 env = gym.make("CartPole-v1")
